@@ -29,7 +29,7 @@ func TestIdentityStore_EntityIDPassthrough(t *testing.T) {
 	}
 
 	// Create a token with the above created entity set on it
-	ent := &TokenEntry{
+	ent := &logical.TokenEntry{
 		ID:           "testtokenid",
 		Path:         "test",
 		Policies:     []string{"root"},
@@ -221,7 +221,7 @@ func TestIdentityStore_WrapInfoInheritance(t *testing.T) {
 
 	// Create a token which has EntityID set and has update permissions to
 	// sys/wrapping/wrap
-	te := &TokenEntry{
+	te := &logical.TokenEntry{
 		Path:     "test",
 		Policies: []string{"default", responseWrappingPolicyName},
 		EntityID: entityID,
@@ -260,7 +260,7 @@ func TestIdentityStore_TokenEntityInheritance(t *testing.T) {
 	ts := c.tokenStore
 
 	// Create a token which has EntityID set
-	te := &TokenEntry{
+	te := &logical.TokenEntry{
 		Path:     "test",
 		Policies: []string{"dev", "prod"},
 		EntityID: "testentityid",
@@ -311,10 +311,10 @@ func testIdentityStoreWithGithubAuth(t *testing.T) (*IdentityStore, string, *Cor
 	return is, ghA, c
 }
 
-// testIdentityStoreWithGithubAuth returns an instance of identity store which
-// is mounted by default. This function also enables the github auth backend to
-// assist with testing aliases and entities that require an valid mount
-// accessor of an auth backend.
+// testIdentityStoreWithGithubAuthRoot returns an instance of identity store
+// which is mounted by default. This function also enables the github auth
+// backend to assist with testing aliases and entities that require an valid
+// mount accessor of an auth backend.
 func testIdentityStoreWithGithubAuthRoot(t *testing.T) (*IdentityStore, string, *Core, string) {
 	// Add github credential factory to core config
 	err := AddTestCredentialBackend("github", credGithub.Factory)
@@ -336,13 +336,7 @@ func testIdentityStoreWithGithubAuthRoot(t *testing.T) (*IdentityStore, string, 
 		t.Fatal(err)
 	}
 
-	// Identity store will be mounted by now, just fetch it from router
-	identitystore := c.router.MatchingBackend("identity/")
-	if identitystore == nil {
-		t.Fatalf("failed to fetch identity store from router")
-	}
-
-	return identitystore.(*IdentityStore), meGH.Accessor, c, root
+	return c.identityStore, meGH.Accessor, c, root
 }
 
 func TestIdentityStore_MetadataKeyRegex(t *testing.T) {

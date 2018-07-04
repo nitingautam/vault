@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/vault/helper/cidrutil"
+	"github.com/hashicorp/vault/helper/parseutil"
 	"github.com/hashicorp/vault/logical"
 	"github.com/hashicorp/vault/logical/framework"
 )
@@ -83,7 +84,7 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 		return logical.ErrorResponse("invalid role ID"), nil
 	}
 
-	var metadata map[string]string
+	metadata := make(map[string]string)
 	if role.BindSecretID {
 		secretID := strings.TrimSpace(data.Get("secret_id").(string))
 		if secretID == "" {
@@ -160,7 +161,7 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 
 			// Ensure that the CIDRs on the secret ID are still a subset of that of
 			// role's
-			err = verifyCIDRRoleSecretIDSubset(entry.CIDRList, role.BoundCIDRList)
+			err = verifyCIDRRoleSecretIDSubset(entry.CIDRList, role.SecretIDBoundCIDRs)
 			if err != nil {
 				return nil, err
 			}
@@ -228,7 +229,7 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 
 			// Ensure that the CIDRs on the secret ID are still a subset of that of
 			// role's
-			err = verifyCIDRRoleSecretIDSubset(entry.CIDRList, role.BoundCIDRList)
+			err = verifyCIDRRoleSecretIDSubset(entry.CIDRList, role.SecretIDBoundCIDRs)
 			if err != nil {
 				return nil, err
 			}
@@ -250,15 +251,26 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 		metadata = entry.Metadata
 	}
 
-	if len(role.BoundCIDRList) != 0 {
+	if len(role.SecretIDBoundCIDRs) != 0 {
 		if req.Connection == nil || req.Connection.RemoteAddr == "" {
 			return nil, fmt.Errorf("failed to get connection information")
 		}
-
-		belongs, err := cidrutil.IPBelongsToCIDRBlocksSlice(req.Connection.RemoteAddr, role.BoundCIDRList)
+		belongs, err := cidrutil.IPBelongsToCIDRBlocksSlice(req.Connection.RemoteAddr, role.SecretIDBoundCIDRs)
 		if err != nil || !belongs {
 			return logical.ErrorResponse(errwrap.Wrapf(fmt.Sprintf("source address %q unauthorized by CIDR restrictions on the role: {{err}}", req.Connection.RemoteAddr), err).Error()), nil
 		}
+	}
+
+	// Parse the CIDRs we should be binding the token to.
+	tokenBoundCIDRs, err := parseutil.ParseAddrs(role.TokenBoundCIDRs)
+	if err != nil {
+		return logical.ErrorResponse(err.Error()), nil
+	}
+
+	// For some reason, if metadata was set to nil while processing secret ID
+	// binding, ensure that it is initialized again to avoid a panic.
+	if metadata == nil {
+		metadata = make(map[string]string)
 	}
 
 	// Always include the role name, for later filtering
@@ -280,6 +292,7 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 		Alias: &logical.Alias{
 			Name: role.RoleID,
 		},
+		BoundCIDRs: tokenBoundCIDRs,
 	}
 
 	return &logical.Response{
